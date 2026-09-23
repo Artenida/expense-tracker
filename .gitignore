@@ -41,3 +41,8 @@ out/
 *.log
 logs/
 data/
+
+# --- SQLite (WAL sidecars appear from sprint 06) ---
+*.db
+*.db-shm
+*.db-wal

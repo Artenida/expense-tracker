@@ -73,10 +73,10 @@ Nothing that does anything. Specifically:
 
 ## Definition of done
 
-- [ ] `mvn clean test` exits 0 and reports `Tests run: 1`
-- [ ] `mvn -version` reports Java 21
-- [ ] `git status` shows no `target/` and no `.db` files
-- [ ] You can name what each of the five top-level `pom.xml` sections does
+- [x] `mvn clean test` exits 0 and reports `Tests run: 1`
+- [x] `mvn -version` reports Java 21
+- [x] `git status` shows no `target/` and no `.db` files
+- [x] You can name what each of the five top-level `pom.xml` sections does
 
 ---
 
