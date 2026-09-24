@@ -109,12 +109,12 @@ branches.**
 
 ## Definition of done
 
-- [ ] `Category.parse("GROCERIES")` works; `Category.parse("FOOD")` throws a message
+- [x] `Category.parse("GROCERIES")` works; `Category.parse("FOOD")` throws a message
       that lists all seven valid names
-- [ ] `BudgetStatus.of` returns the right constant at 79.99%, exactly 80%, 99.99% and
+- [x] `BudgetStatus.of` returns the right constant at 79.99%, exactly 80%, 99.99% and
       exactly 100%
-- [ ] Neither file imports anything from `java.sql`, `javafx`, or your other packages
-- [ ] You can explain why `of` takes cents rather than `BigDecimal`
+- [x] Neither file imports anything from `java.sql`, `javafx`, or your other packages
+- [x] You can explain why `of` takes cents rather than `BigDecimal`
 
 ---
 

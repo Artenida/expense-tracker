@@ -46,3 +46,6 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# --- Personal study notes (local only, never pushed) ---
+notes/
