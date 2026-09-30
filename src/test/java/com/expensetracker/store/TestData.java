@@ -9,8 +9,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
 
-/** Generated expenses for tests. In test sources: nothing in the app needs fake data. */
-final class TestData {
+/**
+ * Generated expenses for tests. In test sources: nothing in the app needs fake data.
+ * Public because sprint 11's summary timing in {@code service} uses it too.
+ */
+public final class TestData {
 
     private TestData() {
     }
@@ -20,7 +23,7 @@ final class TestData {
      * past: Expense rejects future dates, so a month that is still in progress fails on
      * any random day after today.
      */
-    static List<Expense> randomExpenses(int count, YearMonth month, long seed) {
+    public static List<Expense> randomExpenses(int count, YearMonth month, long seed) {
         Random random = new Random(seed);
         List<Expense> out = new ArrayList<>(count);
         Category[] categories = Category.values();
