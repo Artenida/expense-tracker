@@ -67,4 +67,25 @@ final class Sql {
     static final String SELECT_BUDGET_BY_CATEGORY = """
             SELECT category, limit_cents, updated_at FROM budgets WHERE category = ?
             """;
+
+    /**
+     * The second ORDER BY key is sprint 05's requirement: equal totals come back in a
+     * defined order, or the SQL and stream summaries disagree intermittently.
+     */
+    static final String SELECT_TOTALS_BY_CATEGORY = """
+            SELECT category, SUM(amount_cents) AS total, COUNT(*) AS entries
+            FROM expenses
+            WHERE spent_on BETWEEN ? AND ?
+            GROUP BY category
+            ORDER BY total DESC, category ASC
+            """;
+
+    /** LIMIT can be bound: it is a value. ORDER BY ? could not be - that is structure. */
+    static final String SELECT_TOP_EXPENSES = """
+            SELECT id, amount_cents, category, description, spent_on, created_at
+            FROM expenses
+            WHERE spent_on BETWEEN ? AND ?
+            ORDER BY amount_cents DESC, spent_on DESC, id DESC
+            LIMIT ?
+            """;
 }

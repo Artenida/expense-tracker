@@ -1,26 +1,37 @@
 package com.expensetracker.store;
 
 import com.expensetracker.domain.Category;
+import com.expensetracker.domain.CategorySpend;
 import com.expensetracker.domain.Expense;
 import com.expensetracker.domain.ExpenseFilter;
 import com.expensetracker.domain.Money;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
+import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.YearMonth;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -397,6 +408,307 @@ class JdbcExpenseStoreTest {
         assertEquals(3, store.find(SEPTEMBER).size());
         assertEquals(2, store.find(ExpenseFilter.of(YearMonth.of(2025, 8))).size()
                 + store.find(ExpenseFilter.of(YearMonth.of(2025, 10))).size());
+    }
+
+    // --- sprint 09: addAll, the happy path ----------------------------------
+
+    private static final YearMonth IMPORT_MONTH = YearMonth.of(2025, 9);
+    private static final LocalDate FROM = LocalDate.of(2025, 9, 1);
+    private static final LocalDate TO = LocalDate.of(2025, 9, 30);
+
+    @Test
+    void addAllInsertsEveryRow() {
+        List<Expense> batch = TestData.randomExpenses(100, IMPORT_MONTH, 1L);
+
+        assertEquals(100, store.addAll(batch));
+
+        assertEquals(100, countRows());
+        assertTrue(batch.stream().allMatch(e -> store.findById(e.id()).isPresent()));
+    }
+
+    @Test
+    void addAllReturnsZeroForAnEmptyList() {
+        assertEquals(0, store.addAll(List.of()));
+    }
+
+    @Test
+    void addAllReportsProgressForEveryRow() {
+        List<Integer> reported = new ArrayList<>();
+
+        store.addAll(TestData.randomExpenses(100, IMPORT_MONTH, 1L), reported::add, () -> false);
+
+        assertEquals(IntStream.rangeClosed(1, 100).boxed().toList(), reported);
+    }
+
+    /** 1 200, not 1 000: a multiple of 500 hides a missing final executeBatch. */
+    @Test
+    void addAllCrossesTheBatchBoundary() {
+        assertEquals(1_200, store.addAll(TestData.randomExpenses(1_200, IMPORT_MONTH, 3L)));
+
+        assertEquals(1_200, countRows());
+    }
+
+    // --- addAll: rollback ---------------------------------------------------
+
+    private List<Expense> batchWithADuplicate() {
+        Expense duplicate = expense("9.00", Category.OTHER, "dup", "2025-09-02");
+        List<Expense> batch = new ArrayList<>(TestData.randomExpenses(50, IMPORT_MONTH, 1L));
+        batch.add(duplicate);
+        batch.add(duplicate);             // same id twice -> PRIMARY KEY violation
+        return batch;
+    }
+
+    /** countRows is the assertion that matters: "it threw" is also true of a partial insert. */
+    @Test
+    void aFailurePartwayThroughLeavesTheTableUnchanged() {
+        store.add(expense("5.00", Category.OTHER, "existing", "2025-09-01"));
+
+        assertThrows(StoreException.class, () -> store.addAll(batchWithADuplicate()));
+
+        assertEquals(1, countRows());
+    }
+
+    /**
+     * The failure lands after the first batch of 500 has already been sent. This driver
+     * commits an open transaction on setAutoCommit(true), so an implementation that only
+     * rolled back on SQLException would keep those 500 rows.
+     */
+    @Test
+    void aFailureAfterABatchWasSentStillRollsBackEverything() {
+        List<Expense> batch = new ArrayList<>(TestData.randomExpenses(700, IMPORT_MONTH, 4L));
+        batch.add(batch.get(0));          // duplicate of the first row, at position 701
+
+        assertThrows(StoreException.class, () -> store.addAll(batch));
+
+        assertEquals(0, countRows());
+    }
+
+    /** Not a SQLException: the exception is the caller's own and is rethrown unchanged. */
+    @Test
+    void anExceptionFromTheProgressCallbackRollsBack() {
+        List<Expense> batch = TestData.randomExpenses(1_000, IMPORT_MONTH, 5L);
+        IllegalStateException boom = new IllegalStateException("progress bar failed");
+
+        IllegalStateException thrown = assertThrows(IllegalStateException.class,
+                () -> store.addAll(batch, i -> {
+                    if (i == 600) {
+                        throw boom;
+                    }
+                }, () -> false));
+
+        assertSame(boom, thrown);
+        assertEquals(0, countRows());
+    }
+
+    @Test
+    void theExceptionCarriesTheSqlCause() {
+        StoreException thrown = assertThrows(StoreException.class, () -> store.addAll(batchWithADuplicate()));
+
+        assertInstanceOf(SQLException.class, thrown.getCause());
+    }
+
+    /** A leak on the error path is invisible once and fatal two hundred times. */
+    @Test
+    void theConnectionIsNotLeaked() {
+        List<Expense> failing = batchWithADuplicate();
+        for (int i = 0; i < 200; i++) {
+            assertThrows(StoreException.class, () -> store.addAll(failing));
+        }
+
+        assertEquals(10, store.addAll(TestData.randomExpenses(10, IMPORT_MONTH, 6L)));
+    }
+
+    // --- addAll: cancellation -----------------------------------------------
+
+    /** Cancel is driven by the progress count, not a timer, so it lands deterministically. */
+    @Test
+    void cancellingPartwayThroughLeavesTheTableUnchanged() {
+        List<Expense> batch = TestData.randomExpenses(1_000, IMPORT_MONTH, 2L);
+        AtomicInteger seen = new AtomicInteger();
+
+        int inserted = store.addAll(batch, seen::set, () -> seen.get() >= 600);
+
+        assertEquals(0, inserted);
+        assertEquals(600, seen.get(), "cancelled after exactly 600 rows were bound");
+        assertEquals(0, countRows());
+    }
+
+    @Test
+    void cancellingBeforeTheFirstRowInsertsNothing() {
+        AtomicInteger progressCalls = new AtomicInteger();
+
+        int inserted = store.addAll(TestData.randomExpenses(10, IMPORT_MONTH, 2L),
+                i -> progressCalls.incrementAndGet(), () -> true);
+
+        assertEquals(0, inserted);
+        assertEquals(0, progressCalls.get());
+        assertEquals(0, countRows());
+    }
+
+    /** Cancel is polled before each row - once the last row is bound, it is too late. */
+    @Test
+    void aCompletedImportIgnoresALateCancel() {
+        AtomicInteger seen = new AtomicInteger();
+
+        int inserted = store.addAll(TestData.randomExpenses(100, IMPORT_MONTH, 2L),
+                seen::set, () -> seen.get() >= 100);
+
+        assertEquals(100, inserted);
+        assertEquals(100, countRows());
+    }
+
+    // --- aggregates ---------------------------------------------------------
+
+    @Test
+    void totalsByCategorySumsCorrectly() {
+        seed();
+
+        CategorySpend groceries = store.totalsByCategory(FROM, TO).stream()
+                .filter(t -> t.category() == Category.GROCERIES).findFirst().orElseThrow();
+
+        assertEquals(6_490, groceries.spentCents());      // 24.90 + 40.00
+        assertEquals(2, groceries.entryCount());
+    }
+
+    @Test
+    void totalsByCategoryOmitsCategoriesWithNoSpending() {
+        seed();
+
+        assertEquals(3, store.totalsByCategory(FROM, TO).size());
+    }
+
+    @Test
+    void totalsByCategoryIsOrderedByTotalDescending() {
+        seed();
+
+        assertEquals(List.of(Category.GROCERIES, Category.LEISURE, Category.TRANSPORT),
+                store.totalsByCategory(FROM, TO).stream().map(CategorySpend::category).toList());
+    }
+
+    /**
+     * Sprint 11 depends on this. Inserted in reverse alphabetical order, so neither
+     * insertion order nor the category index can produce the right answer by accident.
+     */
+    @Test
+    void totalsByCategoryTiesBreakByCategoryName() {
+        store.add(expense("30.00", Category.TRANSPORT, "train", "2025-09-10"));
+        store.add(expense("30.00", Category.HEALTH, "dentist", "2025-09-11"));
+        store.add(expense("30.00", Category.EDUCATION, "book", "2025-09-12"));
+
+        assertEquals(List.of(Category.EDUCATION, Category.HEALTH, Category.TRANSPORT),
+                store.totalsByCategory(FROM, TO).stream().map(CategorySpend::category).toList());
+    }
+
+    /** Empty, not one row of NULL - GROUP BY with no rows has no groups. */
+    @Test
+    void totalsByCategoryIsEmptyForAnEmptyMonth() {
+        seed();
+
+        assertTrue(store.totalsByCategory(LocalDate.of(2020, 1, 1), LocalDate.of(2020, 1, 31)).isEmpty());
+    }
+
+    @Test
+    void totalsByCategoryExcludesAdjacentMonths() {
+        seed();
+
+        List<CategorySpend> totals = store.totalsByCategory(FROM, TO);
+
+        assertTrue(totals.stream().noneMatch(t -> t.category() == Category.HOUSING), "October leaked in");
+        assertEquals(6_490, totals.get(0).spentCents(), "August's 99.00 groceries leaked in");
+    }
+
+    // --- top N --------------------------------------------------------------
+
+    @Test
+    void findTopReturnsTheLargestFirst() {
+        seed();
+
+        assertEquals(List.of("market", "shop", "cinema"),
+                store.findTop(FROM, TO, 3).stream().map(Expense::description).toList());
+    }
+
+    @Test
+    void findTopRespectsTheLimit() {
+        store.addAll(TestData.randomExpenses(10, IMPORT_MONTH, 7L));
+
+        assertEquals(5, store.findTop(FROM, TO, 5).size());
+    }
+
+    @Test
+    void findTopReturnsEverythingWhenTheLimitExceedsTheRowCount() {
+        store.addAll(TestData.randomExpenses(3, IMPORT_MONTH, 7L));
+
+        assertEquals(3, store.findTop(FROM, TO, 5).size());
+    }
+
+    @Test
+    void findTopIsScopedToTheDateRange() {
+        seed();
+
+        List<String> top = store.findTop(FROM, TO, 10).stream().map(Expense::description).toList();
+
+        assertEquals(4, top.size());
+        assertFalse(top.contains("august"), "the 99.00 August row is the largest overall");
+    }
+
+    @ParameterizedTest
+    @ValueSource(ints = {0, -1})
+    void findTopRejectsANonPositiveLimit(int limit) {
+        assertThrows(IllegalArgumentException.class, () -> store.findTop(FROM, TO, limit));
+    }
+
+    /** Same amount: the later date first, then the id. Checked twice against insertion order. */
+    @Test
+    void findTopBreaksTiesStably() {
+        Instant at = Instant.parse("2025-09-01T12:00:00Z");
+        store.add(Expense.restore("b", new BigDecimal("50.00"), Category.OTHER, "early b", LocalDate.of(2025, 9, 3), at));
+        store.add(Expense.restore("a", new BigDecimal("50.00"), Category.OTHER, "early a", LocalDate.of(2025, 9, 3), at));
+        store.add(Expense.restore("c", new BigDecimal("50.00"), Category.OTHER, "late", LocalDate.of(2025, 9, 20), at));
+
+        List<String> order = store.findTop(FROM, TO, 3).stream().map(Expense::description).toList();
+
+        assertEquals(List.of("late", "early b", "early a"), order);
+        assertEquals(order, store.findTop(FROM, TO, 3).stream().map(Expense::description).toList());
+    }
+
+    // --- the performance fixture --------------------------------------------
+
+    /**
+     * Excluded from the normal run; run with {@code mvn test -Dgroups=slow -DexcludedGroups=}.
+     * Loose bound on purpose: it catches forgetting the transaction (every row committing
+     * alone), not small regressions. Writes to target/fixtures rather than the temp dir,
+     * because sprint 15 needs the file afterwards.
+     */
+    @Test
+    @Tag("slow")
+    void fiftyThousandRowsImportInReasonableTime() throws IOException {
+        Path file = Path.of("target", "fixtures", "expenses-50k.db");
+        Files.deleteIfExists(file);
+        Files.deleteIfExists(Path.of(file + "-wal"));
+        Files.deleteIfExists(Path.of(file + "-shm"));
+        Database fixture = new Database(file);
+        new SchemaMigrator(fixture).migrate();
+        JdbcExpenseStore fixtureStore = new JdbcExpenseStore(fixture);
+        List<Expense> batch = TestData.randomExpenses(50_000, YearMonth.of(2025, 8), 42L);
+
+        long start = System.nanoTime();
+        assertEquals(50_000, fixtureStore.addAll(batch));
+        long millis = (System.nanoTime() - start) / 1_000_000;
+
+        assertEquals(50_000, fixtureStore.find(ExpenseFilter.of(YearMonth.of(2025, 8))).size());
+        System.out.println("50 000 rows imported in " + millis + " ms into " + fixture.path());
+        assertTrue(millis < 30_000, "import took " + millis + " ms");
+    }
+
+    private int countRows() {
+        try (Connection c = db.open();
+             Statement s = c.createStatement();
+             ResultSet rs = s.executeQuery("SELECT COUNT(*) FROM expenses")) {
+            rs.next();
+            return rs.getInt(1);
+        } catch (SQLException e) {
+            throw new AssertionError(e);
+        }
     }
 
     private void insertRaw(String values) throws SQLException {

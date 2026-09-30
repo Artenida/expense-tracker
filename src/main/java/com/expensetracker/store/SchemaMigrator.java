@@ -97,24 +97,12 @@ public final class SchemaMigrator {
                 }
                 c.commit();
             } catch (SQLException e) {
-                rollbackQuietly(c, e);
+                Jdbc.rollbackQuietly(c, e);
                 throw new StoreException("migration " + name + " failed", e);
             }
         } catch (SQLException e) {
             // Only close() can land here; the body's failures were wrapped above.
             throw new StoreException("failed to close connection after migration " + name, e);
-        }
-    }
-
-    /**
-     * A failed rollback must not replace the exception that caused it, so it is
-     * attached to the original as suppressed - still in the stack trace, not in charge.
-     */
-    private static void rollbackQuietly(Connection c, SQLException cause) {
-        try {
-            c.rollback();
-        } catch (SQLException rollbackFailure) {
-            cause.addSuppressed(rollbackFailure);
         }
     }
 
