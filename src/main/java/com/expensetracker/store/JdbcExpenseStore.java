@@ -2,14 +2,18 @@ package com.expensetracker.store;
 
 import com.expensetracker.domain.Category;
 import com.expensetracker.domain.Expense;
+import com.expensetracker.domain.ExpenseFilter;
 import com.expensetracker.domain.Money;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 
@@ -67,6 +71,72 @@ public final class JdbcExpenseStore implements ExpenseStore {
 
         } catch (SQLException ex) {
             throw new StoreException("failed to load expense " + id, ex);
+        }
+    }
+
+    /** Knows nothing about months: the filter already turned one into two dates. */
+    @Override
+    public List<Expense> find(ExpenseFilter filter) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(Sql.SELECT_EXPENSES_FILTERED)) {
+
+            ps.setString(1, filter.from().toString());
+            ps.setString(2, filter.to().toString());
+
+            // Placeholders are positional - there is no "the same one again" - so the
+            // category is bound twice. The one place a parameter is deliberately NULL.
+            if (filter.category().isPresent()) {
+                String name = filter.category().get().name();
+                ps.setString(3, name);
+                ps.setString(4, name);
+            } else {
+                ps.setNull(3, Types.VARCHAR);
+                ps.setNull(4, Types.VARCHAR);
+            }
+
+            try (ResultSet rs = ps.executeQuery()) {
+                List<Expense> found = new ArrayList<>();
+                while (rs.next()) {
+                    found.add(map(rs));
+                }
+                return List.copyOf(found);
+            }
+
+        } catch (SQLException ex) {
+            throw new StoreException("failed to find expenses for " + filter.month(), ex);
+        }
+    }
+
+    @Override
+    public boolean update(Expense e) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(Sql.UPDATE_EXPENSE)) {
+
+            // Numbered by position in the text, so the WHERE clause's id is last.
+            ps.setLong(1, Money.toCents(e.amount()));
+            ps.setString(2, e.category().name());
+            ps.setString(3, e.description());
+            ps.setString(4, e.date().toString());
+            ps.setString(5, e.id());
+
+            // The row count is the only signal that the targeted row was not there.
+            return ps.executeUpdate() > 0;
+
+        } catch (SQLException ex) {
+            throw new StoreException("failed to update expense " + e.id(), ex);
+        }
+    }
+
+    @Override
+    public boolean delete(String id) {
+        try (Connection c = db.open();
+             PreparedStatement ps = c.prepareStatement(Sql.DELETE_EXPENSE)) {
+
+            ps.setString(1, id);
+            return ps.executeUpdate() > 0;
+
+        } catch (SQLException ex) {
+            throw new StoreException("failed to delete expense " + id, ex);
         }
     }
 
