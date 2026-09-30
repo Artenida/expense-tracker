@@ -16,6 +16,27 @@ A desktop expense tracker in Java, built in twenty small sprints. `SPRINTS.md` l
 - **Ties are broken the same way everywhere.** Categories are ordered by spent descending, then
   by name. The largest expense is chosen by amount, then latest date, then highest id.
 
+### CSV import and export
+
+```
+date,category,description,amount
+2026-09-15,GROCERIES,"Weekly shop, incl. wine",24.90
+```
+
+The header is required and checked. Fields are quoted as RFC 4180 describes. Dates are ISO,
+amounts are plain decimals with a `.`, categories are enum names, and the file is always UTF-8.
+
+**The export has no `id` column, and import always adds new expenses.** An export records what
+you spent, not the application's internal ids. Importing means "add these expenses", not
+"restore this backup". One consequence follows: if you export a month and import that same
+file, every expense in it appears twice. That is intended, and
+`ImportServiceTest.exportingThenReimportingDuplicatesEveryExpense` checks it.
+
+An import is all or nothing. The whole file is read and checked first, and any bad line is
+reported with its line number (the header is line 1) before anything is written. The rows are
+then inserted in a single transaction. The reader does not accept line breaks inside quoted
+fields. Descriptions can never contain one, so the app's own exports are unaffected.
+
 ## Where the aggregation belongs
 
 `SummaryService` computes the month summary two ways. `viaSql` uses `GROUP BY` and `LIMIT`.
