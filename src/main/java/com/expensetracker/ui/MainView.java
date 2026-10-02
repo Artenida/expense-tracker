@@ -1,11 +1,11 @@
 package com.expensetracker.ui;
 
-import com.expensetracker.domain.Expense;
 import com.expensetracker.domain.ExpenseFilter;
 import com.expensetracker.service.BudgetService;
 import com.expensetracker.service.ExpenseService;
 import com.expensetracker.service.ImportService;
 import com.expensetracker.service.SummaryService;
+import com.expensetracker.ui.task.BackgroundRunner;
 import javafx.geometry.Insets;
 import javafx.scene.Node;
 import javafx.scene.Parent;
@@ -15,7 +15,6 @@ import javafx.scene.layout.StackPane;
 
 import java.nio.file.Path;
 import java.time.YearMonth;
-import java.util.List;
 import java.util.Objects;
 
 /**
@@ -37,21 +36,24 @@ public final class MainView {
     private final BudgetService budgets;
     private final SummaryService summaries;
     private final ImportService imports;
+    private final BackgroundRunner runner;
 
     public MainView(ExpenseService expenses, BudgetService budgets,
                     SummaryService summaries, ImportService imports,
+                    BackgroundRunner runner,
                     Path databasePath, int schemaVersion) {
         this.expenses = Objects.requireNonNull(expenses, "expenses");
         this.budgets = Objects.requireNonNull(budgets, "budgets");
         this.summaries = Objects.requireNonNull(summaries, "summaries");
         this.imports = Objects.requireNonNull(imports, "imports");
+        this.runner = Objects.requireNonNull(runner, "runner");
 
         root.setLeft(placeholder("Filters", "filter-panel", FILTER_WIDTH));
         root.setCenter(tableView.getRoot());
         root.setRight(placeholder("Summary", "summary-panel", SUMMARY_WIDTH));
         root.setBottom(new StatusBar(databasePath, schemaVersion).getRoot());
 
-        reloadTemporarily();
+        reload();
     }
 
     /**
@@ -63,15 +65,31 @@ public final class MainView {
     }
 
     /**
-     * Last month, so there is data to look at without the current month's
-     * "not in the future" rule getting in the way. Sprint 16 replaces this with a
-     * {@code reload()} driven by the filter controls.
+     * runLatest, not run: from sprint 16 the filter controls can change faster than a
+     * query returns, and only the newest result may reach the table.
      */
-    // TODO(sprint-15): this blocks the FX Application Thread. Move to BackgroundRunner.
-    private void reloadTemporarily() {
-        ExpenseFilter filter = ExpenseFilter.of(YearMonth.now().minusMonths(1));
-        List<Expense> found = expenses.find(filter);
-        tableView.setRows(found);
+    private void reload() {
+        // Evaluated here, on the FX thread, before submitting. The lambda captures the
+        // resulting ExpenseFilter, not the controls: reading a ComboBox inside the work
+        // would touch the UI from the background thread.
+        ExpenseFilter filter = currentFilter();
+        runner.runLatest(
+                () -> expenses.find(filter),
+                tableView::setRows,
+                this::showError);
+    }
+
+    /**
+     * Last month, so there is data to look at without the current month's
+     * "not in the future" rule getting in the way. Sprint 16 reads the filter controls.
+     */
+    private ExpenseFilter currentFilter() {
+        return ExpenseFilter.of(YearMonth.now().minusMonths(1));
+    }
+
+    private void showError(Throwable error) {
+        // TODO(sprint-18): replace with ErrorDialogs - a readable sentence, not a trace
+        error.printStackTrace();
     }
 
     /** Style classes rather than {@code setStyle}: styling lives in app.css. */

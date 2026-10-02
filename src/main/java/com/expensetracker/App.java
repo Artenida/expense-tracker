@@ -14,6 +14,7 @@ import com.expensetracker.store.JdbcExpenseStore;
 import com.expensetracker.store.SchemaMigrator;
 import com.expensetracker.store.StoreException;
 import com.expensetracker.ui.MainView;
+import com.expensetracker.ui.task.BackgroundRunner;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.scene.Scene;
@@ -35,6 +36,9 @@ public class App extends Application {
     private BudgetService budgetService;
     private SummaryService summaryService;
     private ImportService importService;
+
+    /** Created in start, not init: it belongs to the UI, and init may never reach start. */
+    private BackgroundRunner runner;
 
     /** Set in {@code init()}, read in {@code start()}: init runs before there is a UI to show it in. */
     private StoreException startupFailure;
@@ -77,8 +81,9 @@ public class App extends Application {
             return;
         }
 
+        runner = new BackgroundRunner();
         MainView view = new MainView(expenseService, budgetService,
-                summaryService, importService,
+                summaryService, importService, runner,
                 database.path(), migrator.currentVersion());
 
         Scene scene = new Scene(view.getRoot(), 1100, 700);
@@ -98,7 +103,10 @@ public class App extends Application {
 
     @Override
     public void stop() {
-        // sprint 15 shuts the executor down here
+        // Called even when start() bailed out on a startup failure, before the runner existed.
+        if (runner != null) {
+            runner.shutdown();
+        }
     }
 
     /** The store's message names the file; the cause carries SQLite's reason. */
