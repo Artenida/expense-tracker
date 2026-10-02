@@ -49,3 +49,8 @@ data/
 
 # --- Personal study notes (local only, never pushed) ---
 notes/
+
+# --- Packaging (sprint 20): all reproducible from packaging/icon-1024.png and the script ---
+build/
+*.icns
+*.dmg

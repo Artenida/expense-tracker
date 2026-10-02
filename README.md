@@ -1,9 +1,66 @@
 # ExpenseTracker
 
-A desktop expense tracker in Java, built in twenty small sprints. `SPRINTS.md` lists them and
-`PLAN.md` has the full design.
+A desktop expense tracker in Java 21 and JavaFX: record expenses, set a monthly budget per
+category, and see where the money went. It was built in twenty small sprints, which
+`SPRINTS.md` lists; `PLAN.md` has the full design.
+
+## Running it
+
+| | |
+|---|---|
+| From source | `mvn javafx:run` |
+| As a jar | `mvn clean package`, then `java -jar target/expense-tracker-1.0-SNAPSHOT.jar` |
+| Tests | `mvn clean test`. Tests tagged `ui` and `slow` are excluded; run everything with `mvn test -DexcludedGroups=` |
+| macOS app | `./scripts/package-mac.sh` builds `build/dist/ExpenseTracker-1.0.0.dmg`; `--app-image` builds just the `.app`, faster |
+
+The `ui` tests render off-screen through Monocle, so they need no display and no macOS
+Accessibility permission. Add `-Dtestfx.headless=false` to watch them in real windows.
+
+The `.app` carries its own trimmed Java runtime (about 100 MB), so the person running it
+needs no JDK. It is built for the architecture of the machine that built it, because the
+bundled JavaFX native libraries are, and it is unsigned: the first open needs right-click,
+then Open.
+
+### Where the database lives
+
+The status bar shows the path in use. It is chosen in this order:
+
+1. `-Dexpenses.db=/some/file.db`, when set. The smoke tests use this to stay off real data.
+2. `~/Library/Application Support/ExpenseTracker/expenses.db` on macOS, from source or from
+   the bundle. A `.app` is read-only, so the database can never live next to the executable.
+3. `./data/expenses.db` elsewhere.
+
+The app creates the directory and runs the migrations itself, before the window appears.
+
+### Architecture
+
+```
+ui  ──►  service  ──►  store (interfaces)  ──►  domain
+ │          │                                      ▲
+ └──────────┴──────────────────────────────────────┘
+```
+
+`domain` imports nothing of ours. Only `store` imports `java.sql`, and only `ui` imports
+`javafx` (plus `App` and `Launcher`). `ui` uses services, never stores; its one import from
+`store` is `StoreException`, which services throw. `ArchitectureTest` enforces all of this.
+`App` is the one class that builds every layer.
+
+`Launcher` exists only to call `App.main`. A main class that extends `Application` refuses to
+start from the classpath ("JavaFX runtime components are missing"), which is where `java -jar`
+and the bundle put JavaFX. `LauncherTest` stops it being merged away.
 
 ## Decisions a reader will ask about
+
+### Identity and money
+
+- **Ids are random UUIDs, made by the application**, not database row numbers. An expense has
+  its id before it is saved, so nothing waits on an insert to learn it, and two imports can
+  never collide.
+- **Amounts are `BigDecimal` in Java and integer cents in the database**, converted only in
+  `Money`. `Money.format` is the only place an amount is rounded for display.
+- **`12,50` is rejected.** Amounts accept digits, optionally a `.` and up to two decimals,
+  whatever the machine's locale, so the same file or keystrokes mean the same thing on every
+  computer. `20` and `20.5` are fine.
 
 ### The month summary
 
