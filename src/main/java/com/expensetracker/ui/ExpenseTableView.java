@@ -9,11 +9,14 @@ import javafx.scene.Node;
 import javafx.scene.control.Button;
 import javafx.scene.control.Label;
 import javafx.scene.control.TableColumn;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TableView;
 import javafx.scene.control.ToolBar;
 import javafx.scene.layout.BorderPane;
 
 import java.util.List;
+import java.util.Objects;
+import java.util.function.Consumer;
 
 /**
  * The expense table and its toolbar. Data goes into {@code rows}; the table shows a
@@ -25,9 +28,16 @@ public final class ExpenseTableView {
     private final ObservableList<ExpenseRow> rows = FXCollections.observableArrayList();
     private final BorderPane root = new BorderPane();
 
-    public ExpenseTableView() {
+    private final Runnable onAdd;
+    private final Consumer<ExpenseRow> onEdit;
+
+    /** What the buttons and rows do is the owner's business; this class only reports the gesture. */
+    public ExpenseTableView(Runnable onAdd, Consumer<ExpenseRow> onEdit) {
+        this.onAdd = Objects.requireNonNull(onAdd, "onAdd");
+        this.onEdit = Objects.requireNonNull(onEdit, "onEdit");
         buildColumns();
         buildSorting();
+        buildRowFactory();
         root.setTop(buildToolbar());
         root.setCenter(table);
     }
@@ -76,13 +86,29 @@ public final class ExpenseTableView {
         table.setItems(sorted);
     }
 
+    /**
+     * Double-click to edit. TableRows exist for the blank area below the last row too,
+     * and their item is null - hence the isEmpty() guard.
+     */
+    private void buildRowFactory() {
+        table.setRowFactory(view -> {
+            TableRow<ExpenseRow> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && !row.isEmpty()) {
+                    onEdit.accept(row.getItem());
+                }
+            });
+            return row;
+        });
+    }
+
     /** Disabled rather than missing: an honest placeholder beats a button that does nothing. */
     private Node buildToolbar() {
         Button add = new Button("Add expense");
         Button impor = new Button("Import CSV");
         Button export = new Button("Export CSV");
 
-        add.setDisable(true);       // sprint 17
+        add.setOnAction(e -> onAdd.run());
         impor.setDisable(true);     // sprint 19
         export.setDisable(true);    // sprint 19
 

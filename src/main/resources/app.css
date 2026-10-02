@@ -97,3 +97,10 @@
 .status-no-budget > .bar {
     -fx-background-color: #b8b8bd;
 }
+
+/* --- expense dialog ----------------------------------------------------- */
+
+.field-error {
+    -fx-text-fill: #d03a30;
+    -fx-font-size: 11px;
+}

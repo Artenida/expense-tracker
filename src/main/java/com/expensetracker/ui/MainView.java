@@ -5,9 +5,11 @@ import com.expensetracker.service.BudgetService;
 import com.expensetracker.service.ExpenseService;
 import com.expensetracker.service.ImportService;
 import com.expensetracker.service.SummaryService;
+import com.expensetracker.ui.model.ExpenseRow;
 import com.expensetracker.ui.task.BackgroundRunner;
 import javafx.scene.Parent;
 import javafx.scene.layout.BorderPane;
+import javafx.stage.Window;
 
 import java.nio.file.Path;
 import java.util.Objects;
@@ -28,12 +30,13 @@ public final class MainView {
     private final BudgetService budgets;
     private final SummaryService summaries;
     private final ImportService imports;
+    private final BackgroundRunner runner;
     // One stream each: a table load supersedes table loads, never the summary's.
     private final BackgroundRunner.Latest tableLoads;
     private final BackgroundRunner.Latest summaryLoads;
 
     // Everything reload() touches is built before the panel whose changes trigger it.
-    private final ExpenseTableView tableView = new ExpenseTableView();
+    private final ExpenseTableView tableView = new ExpenseTableView(this::onAdd, this::onEdit);
     private final SummaryPane summaryPane = new SummaryPane();
     private final FilterPanel filterPanel = new FilterPanel(this::reload);
 
@@ -45,7 +48,7 @@ public final class MainView {
         this.budgets = Objects.requireNonNull(budgets, "budgets");
         this.summaries = Objects.requireNonNull(summaries, "summaries");
         this.imports = Objects.requireNonNull(imports, "imports");
-        Objects.requireNonNull(runner, "runner");
+        this.runner = Objects.requireNonNull(runner, "runner");
         this.tableLoads = runner.latest();
         this.summaryLoads = runner.latest();
 
@@ -86,6 +89,29 @@ public final class MainView {
 
         tableLoads.run(() -> expenses.find(filter), tableView::setRows, this::showError);
         summaryLoads.run(() -> summaries.summarise(filter.month()), summaryPane::update, this::showError);
+    }
+
+    /**
+     * The dialog runs on the FX thread - showAndWait runs a nested event loop, so the
+     * window keeps drawing - and the save goes through the runner. On success, reload():
+     * never rows.add(...) (U-5).
+     */
+    private void onAdd() {
+        ExpenseDialog.forNew(window()).ifPresent(expense ->
+                runner.run(() -> expenses.add(expense.amount(), expense.category(),
+                                expense.description(), expense.date()),
+                        added -> reload(),
+                        this::showError));
+    }
+
+    /** row.source() is the real Expense, so edit() keeps its id and createdAt. */
+    private void onEdit(ExpenseRow row) {
+        ExpenseDialog.forEditing(window(), row.source()).ifPresent(edited ->
+                runner.run(() -> expenses.update(edited), updated -> reload(), this::showError));
+    }
+
+    private Window window() {
+        return root.getScene() == null ? null : root.getScene().getWindow();
     }
 
     private void showError(Throwable error) {
