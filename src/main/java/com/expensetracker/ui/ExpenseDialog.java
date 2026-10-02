@@ -115,6 +115,9 @@ public final class ExpenseDialog {
         categoryBox.setValue(Category.OTHER);
         categoryBox.setMaxWidth(Double.MAX_VALUE);
 
+        // Ids for the smoke tests: stable, and they say what they mean, unlike a CSS class.
+        amountField.setId("amountField");
+        descriptionField.setId("descriptionField");
         amountField.setPromptText("24.90");
         descriptionField.setPromptText("Weekly shop");
         datePicker.setValue(LocalDate.now());

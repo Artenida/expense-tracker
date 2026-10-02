@@ -38,12 +38,18 @@ public final class ExpenseTableView {
     private final Runnable onAdd;
     private final Consumer<ExpenseRow> onEdit;
     private final Consumer<ExpenseRow> onDelete;
+    private final Runnable onImport;
+    private final Runnable onExport;
 
     /** What the buttons and rows do is the owner's business; this class only reports the gesture. */
-    public ExpenseTableView(Runnable onAdd, Consumer<ExpenseRow> onEdit, Consumer<ExpenseRow> onDelete) {
+    public ExpenseTableView(Runnable onAdd, Consumer<ExpenseRow> onEdit, Consumer<ExpenseRow> onDelete,
+                            Runnable onImport, Runnable onExport) {
         this.onAdd = Objects.requireNonNull(onAdd, "onAdd");
         this.onEdit = Objects.requireNonNull(onEdit, "onEdit");
         this.onDelete = Objects.requireNonNull(onDelete, "onDelete");
+        this.onImport = Objects.requireNonNull(onImport, "onImport");
+        this.onExport = Objects.requireNonNull(onExport, "onExport");
+        table.setId("expenseTable");
         addColumns(table);
         table.setPlaceholder(new Label("No expenses for this selection"));
         buildSorting(table, rows);
@@ -146,15 +152,14 @@ public final class ExpenseTableView {
         });
     }
 
-    /** Disabled rather than missing: an honest placeholder beats a button that does nothing. */
     private Node buildToolbar() {
         Button add = new Button("Add expense");
         Button impor = new Button("Import CSV");
         Button export = new Button("Export CSV");
 
         add.setOnAction(e -> onAdd.run());
-        impor.setDisable(true);     // sprint 19
-        export.setDisable(true);    // sprint 19
+        impor.setOnAction(e -> onImport.run());
+        export.setOnAction(e -> onExport.run());
 
         ToolBar bar = new ToolBar(add, impor, export);
         bar.getStyleClass().add("expense-toolbar");

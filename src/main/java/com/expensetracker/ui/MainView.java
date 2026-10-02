@@ -43,10 +43,12 @@ public final class MainView {
     private final BackgroundRunner.Latest summaryLoads;
 
     // Everything reload() touches is built before the panel whose changes trigger it.
-    private final ExpenseTableView tableView = new ExpenseTableView(this::onAdd, this::onEdit, this::onDelete);
+    private final ExpenseTableView tableView = new ExpenseTableView(
+            this::onAdd, this::onEdit, this::onDelete, this::onImport, this::onExport);
     private final SummaryPane summaryPane = new SummaryPane();
     private final TopExpensesView topExpensesView;
     private final BudgetPane budgetPane;
+    private final ImportExportActions importExport;
     private final FilterPanel filterPanel = new FilterPanel(this::reload);
 
     public MainView(ExpenseService expenses, BudgetService budgets,
@@ -62,6 +64,7 @@ public final class MainView {
         this.summaryLoads = runner.latest();
         this.topExpensesView = new TopExpensesView(expenses, runner);
         this.budgetPane = new BudgetPane(budgets, runner, this::reload);
+        this.importExport = new ImportExportActions(imports, runner, this::window, this::reload);
 
         // UNAVAILABLE: the default lets a user close a tab with no way to bring it back.
         TabPane tabs = new TabPane();
@@ -154,6 +157,15 @@ public final class MainView {
             expenses.delete(expense.id());
             return null;
         }, ignored -> reload(), this::reloadAndShow);
+    }
+
+    private void onImport() {
+        importExport.importCsv();
+    }
+
+    /** The current filter, read on the FX thread: export writes what the user is looking at. */
+    private void onExport() {
+        importExport.exportCsv(filterPanel.currentFilter());
     }
 
     /**
