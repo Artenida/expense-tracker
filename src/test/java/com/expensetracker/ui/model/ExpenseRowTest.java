@@ -78,6 +78,30 @@ class ExpenseRowTest {
         }
     }
 
+    // --- the typed amount -------------------------------------------------
+
+    @Test
+    void amountValueIsTheBigDecimalItself() {
+        ExpenseRow row = new ExpenseRow(expense("24.9", Category.GROCERIES));
+
+        assertEquals(new BigDecimal("24.90"), row.amountValueProperty().get());
+    }
+
+    /** What the table's comparator does with the typed column: numeric, not alphabetical. */
+    @Test
+    void amountValuesSortNumerically() {
+        List<String> sorted = ExpenseRow.wrap(List.of(
+                        expense("100.00", Category.OTHER),
+                        expense("24.90", Category.OTHER),
+                        expense("9.00", Category.OTHER)))
+                .stream()
+                .sorted(java.util.Comparator.comparing(r -> r.amountValueProperty().get()))
+                .map(r -> r.amountProperty().get())
+                .toList();
+
+        assertEquals(List.of("9.00", "24.90", "100.00"), sorted);
+    }
+
     // --- the source is preserved --------------------------------------------
 
     @Test

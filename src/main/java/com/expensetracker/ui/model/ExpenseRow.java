@@ -2,9 +2,12 @@ package com.expensetracker.ui.model;
 
 import com.expensetracker.domain.Expense;
 import com.expensetracker.domain.Money;
+import javafx.beans.property.ReadOnlyObjectProperty;
+import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringProperty;
 import javafx.beans.property.ReadOnlyStringWrapper;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Objects;
 
@@ -23,6 +26,7 @@ public final class ExpenseRow {
     private final ReadOnlyStringWrapper category;
     private final ReadOnlyStringWrapper description;
     private final ReadOnlyStringWrapper amount;
+    private final ReadOnlyObjectWrapper<BigDecimal> amountValue;
 
     public ExpenseRow(Expense source) {
         this.source = Objects.requireNonNull(source, "source");
@@ -31,6 +35,7 @@ public final class ExpenseRow {
         this.category = new ReadOnlyStringWrapper(source.category().displayName());
         this.description = new ReadOnlyStringWrapper(source.description());
         this.amount = new ReadOnlyStringWrapper(Money.format(source.amount()));
+        this.amountValue = new ReadOnlyObjectWrapper<>(source.amount());
     }
 
     /** The original object, not a copy: sprint 17's dialog edits it to keep id and createdAt. */
@@ -50,9 +55,14 @@ public final class ExpenseRow {
         return description.getReadOnlyProperty();
     }
 
-    // A String, so "100.00" sorts before "24.90". Sprint 18 replaces it with a typed column.
+    /** The formatted amount, for anything that wants plain text. Sorts as text - "100.00" before "24.90". */
     public ReadOnlyStringProperty amountProperty() {
         return amount.getReadOnlyProperty();
+    }
+
+    /** The value itself, for the table column: BigDecimal is Comparable, so it sorts numerically. */
+    public ReadOnlyObjectProperty<BigDecimal> amountValueProperty() {
+        return amountValue.getReadOnlyProperty();
     }
 
     /** Keeps the store's order: the table opens newest-first only if this does not reorder. */

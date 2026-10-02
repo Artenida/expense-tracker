@@ -41,10 +41,15 @@ class ArchitectureTest {
         assertNoImport("import javafx.", "/ui/", JAVAFX_ALLOWED_OUTSIDE_UI);
     }
 
-    /** ui -> service -> store: the window holds services, and only App builds stores. */
+    /**
+     * ui -> service -> store: the window holds services, and only App builds stores.
+     * StoreException is the one exception: services throw it, so ErrorDialogs has to be
+     * able to name it. Allowed by exact import line, so a second store type still fails.
+     */
     @Test
     void uiDoesNotImportTheStore() throws IOException {
-        assertNoImportUnder("import com.expensetracker.store", "/ui/");
+        assertNoImportUnder("import com.expensetracker.store", "/ui/",
+                Set.of("import com.expensetracker.store.StoreException;"));
     }
 
     private void assertNoImport(String forbidden, String allowedPathFragment, Set<String> allowedFiles)
@@ -66,12 +71,15 @@ class ArchitectureTest {
         }
     }
 
-    private void assertNoImportUnder(String forbidden, String pathFragment) throws IOException {
+    private void assertNoImportUnder(String forbidden, String pathFragment, Set<String> allowedLines)
+            throws IOException {
         try (Stream<Path> paths = Files.walk(SOURCE_ROOT)) {
             List<String> offenders = paths
                     .filter(p -> p.toString().endsWith(".java"))
                     .filter(p -> p.toString().replace('\\', '/').contains(pathFragment))
-                    .filter(p -> readSafely(p).contains(forbidden))
+                    .filter(p -> readSafely(p).lines()
+                            .filter(line -> !allowedLines.contains(line.trim()))
+                            .anyMatch(line -> line.contains(forbidden)))
                     .map(Path::toString)
                     .sorted()
                     .toList();
