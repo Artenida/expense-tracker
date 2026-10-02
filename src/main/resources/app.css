@@ -1,0 +1,37 @@
+/*
+ * All styling lives here, not in setStyle(...) calls in view classes.
+ * JavaFX CSS is not web CSS: every property is prefixed -fx-, .label matches every
+ * Label, and an unknown property is ignored silently - no effect usually means it
+ * does not exist.
+ */
+
+.root {
+    -fx-font-family: "SF Pro Text", "Helvetica Neue", sans-serif;
+    -fx-font-size: 13px;
+}
+
+.status-bar {
+    -fx-background-color: #f4f4f6;
+    -fx-border-width: 1 0 0 0;
+    -fx-border-color: #dcdce0;
+}
+
+.status-bar .label {
+    -fx-text-fill: #666;
+    -fx-font-size: 11px;
+}
+
+.filter-panel {
+    -fx-border-width: 0 1 0 0;
+    -fx-border-color: #dcdce0;
+}
+
+.summary-panel {
+    -fx-border-width: 0 0 0 1;
+    -fx-border-color: #dcdce0;
+}
+
+.placeholder {
+    -fx-text-fill: #999;
+    -fx-font-style: italic;
+}
