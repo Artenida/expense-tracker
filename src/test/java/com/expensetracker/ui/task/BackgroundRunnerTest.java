@@ -122,18 +122,19 @@ class BackgroundRunnerTest {
         assertEquals("second runs", second.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
-    // --- runLatest ----------------------------------------------------------
+    // --- latest -------------------------------------------------------------
 
     @Test
     void onlyTheNewestRequestDeliversItsResult() throws Exception {
+        BackgroundRunner.Latest stream = runner.latest();
         List<String> delivered = Collections.synchronizedList(new ArrayList<>());
         CountDownLatch holdFirst = new CountDownLatch(1);
         CountDownLatch newestDone = new CountDownLatch(1);
 
         // One worker: the slow request is held until the fast one is queued behind it,
         // so the order is fixed by the latch, not by timing.
-        runner.runLatest(awaiting(holdFirst, "slow"), delivered::add, e -> { });
-        runner.runLatest(() -> "fast", v -> { delivered.add(v); newestDone.countDown(); }, e -> { });
+        stream.run(awaiting(holdFirst, "slow"), delivered::add, e -> { });
+        stream.run(() -> "fast", v -> { delivered.add(v); newestDone.countDown(); }, e -> { });
 
         holdFirst.countDown();
         assertTrue(newestDone.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
@@ -143,29 +144,46 @@ class BackgroundRunnerTest {
 
     @Test
     void aSingleRequestStillDelivers() throws Exception {
+        BackgroundRunner.Latest stream = runner.latest();
         CompletableFuture<String> delivered = new CompletableFuture<>();
 
-        runner.runLatest(() -> "only", delivered::complete, delivered::completeExceptionally);
+        stream.run(() -> "only", delivered::complete, delivered::completeExceptionally);
 
         assertEquals("only", delivered.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     @Test
     void staleFailuresAreAlsoDiscarded() throws Exception {
+        BackgroundRunner.Latest stream = runner.latest();
         List<Throwable> errors = Collections.synchronizedList(new ArrayList<>());
         CountDownLatch holdFirst = new CountDownLatch(1);
         CountDownLatch newestDone = new CountDownLatch(1);
 
-        runner.runLatest(() -> {
+        stream.run(() -> {
             awaitQuietly(holdFirst);
             throw new StoreException("stale failure");
         }, v -> { }, errors::add);
-        runner.runLatest(() -> "fresh", v -> newestDone.countDown(), errors::add);
+        stream.run(() -> "fresh", v -> newestDone.countDown(), errors::add);
 
         holdFirst.countDown();
         assertTrue(newestDone.await(TIMEOUT_SECONDS, TimeUnit.SECONDS));
 
         assertEquals(List.of(), errors);
+    }
+
+    @Test
+    void separateStreamsDoNotSupersedeEachOther() throws Exception {
+        BackgroundRunner.Latest table = runner.latest();
+        BackgroundRunner.Latest summary = runner.latest();
+        CompletableFuture<String> tableResult = new CompletableFuture<>();
+        CompletableFuture<String> summaryResult = new CompletableFuture<>();
+
+        // What MainView.reload() does: one request on each stream, back to back.
+        table.run(() -> "rows", tableResult::complete, tableResult::completeExceptionally);
+        summary.run(() -> "summary", summaryResult::complete, summaryResult::completeExceptionally);
+
+        assertEquals("rows", tableResult.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertEquals("summary", summaryResult.get(TIMEOUT_SECONDS, TimeUnit.SECONDS));
     }
 
     // --- shutdown -----------------------------------------------------------

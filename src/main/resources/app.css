@@ -31,11 +31,6 @@
     -fx-border-color: #dcdce0;
 }
 
-.placeholder {
-    -fx-text-fill: #999;
-    -fx-font-style: italic;
-}
-
 /* Pos constants with hyphens - CENTER-RIGHT, not "right". */
 .amount-column {
     -fx-alignment: CENTER-RIGHT;
@@ -47,4 +42,58 @@
 
 .table-row-cell:selected {
     -fx-background-color: #d6e4ff;
+}
+
+/* --- summary panel ------------------------------------------------------ */
+
+.summary-pane {
+    -fx-background-color: #fafafc;
+}
+
+.summary-title {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+}
+
+.summary-totals {
+    -fx-text-fill: #555;
+}
+
+.category-name {
+    -fx-font-weight: bold;
+}
+
+.category-note {
+    -fx-font-size: 11px;
+    -fx-text-fill: #777;
+}
+
+.summary-footer {
+    -fx-font-size: 12px;
+    -fx-text-fill: #444;
+}
+
+.progress-bar {
+    -fx-pref-height: 10px;
+}
+
+/*
+ * "> .bar" is the ProgressBar's internal fill node; styling the ProgressBar itself
+ * would colour the track. Class names must match BudgetStatus.cssClass() exactly -
+ * a typo gives the default blue bar, not an error.
+ */
+.status-ok > .bar {
+    -fx-background-color: #2e9e4f;
+}
+
+.status-warning > .bar {
+    -fx-background-color: #e0a018;
+}
+
+.status-exceeded > .bar {
+    -fx-background-color: #d03a30;
+}
+
+.status-no-budget > .bar {
+    -fx-background-color: #b8b8bd;
 }

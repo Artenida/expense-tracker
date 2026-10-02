@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.YearMonth;
 import java.util.List;
+import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -88,6 +89,21 @@ class ExpenseServiceTest {
 
         assertSame(filter, fake.lastFilter, "the filter arrives unchanged");
         assertSame(fake.queryResult, found, "and the result comes back unchanged");
+    }
+
+    /**
+     * Sprint 16's filter rule, asserted at the seam: one store call carrying both
+     * criteria. A find(month) followed by a .filter() in Java would fail this while the
+     * UI looked identical.
+     */
+    @Test
+    void changingTheFilterIssuesExactlyOneQueryWithBothCriteria() {
+        service.find(ExpenseFilter.of(YearMonth.of(2026, 9), Category.GROCERIES));
+
+        assertEquals(1, fake.findCalls.size());
+        ExpenseFilter used = fake.findCalls.get(0);
+        assertEquals(YearMonth.of(2026, 9), used.month());
+        assertEquals(Optional.of(Category.GROCERIES), used.category());
     }
 
     @Test

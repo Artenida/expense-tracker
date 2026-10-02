@@ -27,8 +27,6 @@ public final class BackgroundRunner {
         return t;
     });
 
-    private final AtomicLong latestRequest = new AtomicLong();
-
     public <T> void run(Supplier<T> work, Consumer<T> onSuccess, Consumer<Throwable> onError) {
         Task<T> task = task(work);
         task.setOnSucceeded(e -> onSuccess.accept(task.getValue()));
@@ -37,27 +35,13 @@ public final class BackgroundRunner {
     }
 
     /**
-     * Like {@code run}, but only the most recent request's outcome is delivered. The
-     * stale work still runs to completion - this discards the result, it does not cancel -
-     * and with one worker it delays the newer request. Acceptable for a read.
+     * A new stream of requests where only the newest outcome is delivered. Each caller
+     * that reloads one thing - the table, the summary - takes its own: with a single
+     * shared counter, the summary's request would supersede the table's and the table
+     * would never load.
      */
-    public <T> void runLatest(Supplier<T> work, Consumer<T> onSuccess, Consumer<Throwable> onError) {
-        long request = latestRequest.incrementAndGet();
-
-        Task<T> task = task(work);
-        task.setOnSucceeded(e -> {
-            if (request == latestRequest.get()) {
-                onSuccess.accept(task.getValue());
-            }
-        });
-        // Guarded too: a stale failure would otherwise report an error for a request
-        // the user has already moved on from.
-        task.setOnFailed(e -> {
-            if (request == latestRequest.get()) {
-                onError.accept(task.getException());
-            }
-        });
-        executor.submit(task);
+    public Latest latest() {
+        return new Latest();
     }
 
     /** For a Task built elsewhere - sprint 19's import, which needs progress and cancel. */
@@ -82,6 +66,39 @@ public final class BackgroundRunner {
     /** Package-private for the shutdown tests. */
     boolean isShutdown() {
         return executor.isShutdown();
+    }
+
+    /**
+     * Requests on one stream supersede each other; requests on different streams do not.
+     * The stale work still runs to completion - this discards the result, it does not
+     * cancel - and with one worker it delays the newer request. Acceptable for a read.
+     */
+    public final class Latest {
+
+        // Incremented on the FX thread and compared there too; atomic so the question never arises.
+        private final AtomicLong latestRequest = new AtomicLong();
+
+        private Latest() {
+        }
+
+        public <T> void run(Supplier<T> work, Consumer<T> onSuccess, Consumer<Throwable> onError) {
+            long request = latestRequest.incrementAndGet();
+
+            Task<T> task = task(work);
+            task.setOnSucceeded(e -> {
+                if (request == latestRequest.get()) {
+                    onSuccess.accept(task.getValue());
+                }
+            });
+            // Guarded too: a stale failure would otherwise report an error for a request
+            // the user has already moved on from.
+            task.setOnFailed(e -> {
+                if (request == latestRequest.get()) {
+                    onError.accept(task.getException());
+                }
+            });
+            executor.submit(task);
+        }
     }
 
     /**

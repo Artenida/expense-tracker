@@ -29,6 +29,7 @@ final class FakeExpenseStore implements ExpenseStore {
     private final Map<String, Expense> rows = new LinkedHashMap<>();
 
     ExpenseFilter lastFilter;
+    final List<ExpenseFilter> findCalls = new ArrayList<>();
     LocalDate lastTopFrom;
     LocalDate lastTopTo;
     int lastTopLimit;
@@ -63,6 +64,7 @@ final class FakeExpenseStore implements ExpenseStore {
     @Override
     public List<Expense> find(ExpenseFilter filter) {
         lastFilter = filter;
+        findCalls.add(filter);
         return queryResult;
     }
 
